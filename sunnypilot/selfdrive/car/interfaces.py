@@ -35,7 +35,7 @@ def _initialize_neural_network_lateral_control(CI: CarInterfaceBase, CP: structs
   if nnlc_model_name != "MOCK" and CP.steerControlType != structs.CarParams.SteerControlType.angle:
     enabled = params.get_bool("NeuralNetworkLateralControl")
 
-  if enabled:
+  if False: # enabled:
     CI.configure_torque_tune(CP.carFingerprint, CP.lateralTuning)
 
   CP_SP.neuralNetworkLateralControl.model.path = nnlc_model_path
