@@ -1,3 +1,9 @@
+This is a fork to test the vehicle selection screen of sunnypilot. Currently Nissan Leaf 2018~ Instrument cluster is not selectable and is also not in the cars list.
+Install: https://smiskol.com/fork/Sathans/dev-c3-new
+
+
+
+
 ![](https://user-images.githubusercontent.com/47793918/233812617-beab2e71-57b9-479e-8bff-c3931347ca40.png)
 
 ## 🌞 What is sunnypilot?
