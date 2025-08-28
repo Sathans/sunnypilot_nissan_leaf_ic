@@ -25,20 +25,34 @@ class CarState(CarStateBase):
     self.distance_button = 0
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
+    vehicle = self.CP.carFingerprint
+    
     cp = can_parsers[Bus.pt]
     cp_cam = can_parsers[Bus.cam]
     cp_adas = can_parsers[Bus.adas]
 
     ret = structs.CarState()
     ret_sp = structs.CarStateSP()
-
+    
     prev_distance_button = self.distance_button
     self.distance_button = cp.vl["CRUISE_THROTTLE"]["FOLLOW_DISTANCE_BUTTON"]
 
-    if self.CP.carFingerprint in (CAR.NISSAN_ROGUE, CAR.NISSAN_XTRAIL, CAR.NISSAN_ALTIMA):
+    # The only known difference between Nissan leaf and Instument cluster is the inverted seatbelt signal
+    if vehicle == CAR.NISSAN_LEAF_IC:
+      ret.seatbeltUnlatched = cp.vl["CANCEL_MSG"]["CANCEL_SEATBELT"] == 1
+      ret.cruiseState.available = bool(cp.vl["CRUISE_THROTTLE"]["CRUISE_AVAILABLE"])
+      vehicle = CAR.NISSAN_LEAF
+    elif vehicle == CAR.NISSAN_LEAF:
+      ret.seatbeltUnlatched = cp.vl["SEATBELT"]["SEATBELT_DRIVER_LATCHED"] == 0
+      ret.cruiseState.available = bool(cp.vl["CRUISE_THROTTLE"]["CRUISE_AVAILABLE"])
+    elif vehicle in (CAR.NISSAN_ROGUE, CAR.NISSAN_XTRAIL):  
+      ret.seatbeltUnlatched = cp.vl["HUD"]["SEATBELT_DRIVER_LATCHED"] == 0
+      ret.cruiseState.available = bool(cp_cam.vl["PRO_PILOT"]["CRUISE_ON"])
+
+    if vehicle in (CAR.NISSAN_ROGUE, CAR.NISSAN_XTRAIL, CAR.NISSAN_ALTIMA):
       ret.gasPressed = bool(cp.vl["GAS_PEDAL"]["GAS_PEDAL"] > 3)
       ret.brakePressed = bool(cp.vl["DOORS_LIGHTS"]["USER_BRAKE_PRESSED"])
-    elif self.CP.carFingerprint in (CAR.NISSAN_LEAF, CAR.NISSAN_LEAF_IC):
+    elif vehicle == CAR.NISSAN_LEAF:
       ret.gasPressed = bool(cp.vl["CRUISE_THROTTLE"]["GAS_PEDAL"] > 3)
       ret.brakePressed = bool(cp.vl["CRUISE_THROTTLE"]["USER_BRAKE_PRESSED"])
 
@@ -54,20 +68,9 @@ class CarState(CarStateBase):
     ret.vEgo, ret.aEgo = self.update_speed_kf(v_ego_raw_full)
     ret.standstill = cp.vl["WHEEL_SPEEDS_REAR"]["WHEEL_SPEED_RL"] == 0.0 and cp.vl["WHEEL_SPEEDS_REAR"]["WHEEL_SPEED_RR"] == 0.0
 
-    if self.CP.carFingerprint in (CAR.NISSAN_ROGUE, CAR.NISSAN_XTRAIL):
-      ret.seatbeltUnlatched = cp.vl["HUD"]["SEATBELT_DRIVER_LATCHED"] == 0
-      ret.cruiseState.available = bool(cp_cam.vl["PRO_PILOT"]["CRUISE_ON"])
-    elif self.CP.carFingerprint == CAR.NISSAN_LEAF:
-        ret.seatbeltUnlatched = cp.vl["SEATBELT"]["SEATBELT_DRIVER_LATCHED"] == 0
-    elif self.CP.carFingerprint == CAR.NISSAN_LEAF_IC:
-      ret.seatbeltUnlatched = cp.vl["CANCEL_MSG"]["CANCEL_SEATBELT"] == 1
-      ret.cruiseState.available = bool(cp.vl["CRUISE_THROTTLE"]["CRUISE_AVAILABLE"])
-    elif self.CP.carFingerprint == CAR.NISSAN_ALTIMA:
-      ret.seatbeltUnlatched = cp.vl["HUD"]["SEATBELT_DRIVER_LATCHED"] == 0
-      ret.cruiseState.available = bool(cp_adas.vl["PRO_PILOT"]["CRUISE_ON"])
 
 
-    if self.CP.carFingerprint == CAR.NISSAN_ALTIMA:
+    if vehicle == CAR.NISSAN_ALTIMA:
       ret.steeringTorque = cp_cam.vl["STEER_TORQUE_SENSOR"]["STEER_TORQUE_DRIVER"]
       ret.cruiseState.enabled = bool(cp.vl["CRUISE_STATE"]["CRUISE_ENABLED"])
       speed = cp.vl["PROPILOT_HUD"]["SET_SPEED"]
@@ -79,7 +82,7 @@ class CarState(CarStateBase):
 
 
     if speed != 255:
-      if self.CP.carFingerprint in (CAR.NISSAN_LEAF, CAR.NISSAN_LEAF_IC):
+      if vehicle == CAR.NISSAN_LEAF:
         conversion = CV.MPH_TO_MS if cp.vl["HUD_SETTINGS"]["SPEED_MPH"] else CV.KPH_TO_MS
       else:
         conversion = CV.MPH_TO_MS if cp.vl["HUD"]["SPEED_MPH"] else CV.KPH_TO_MS
@@ -108,19 +111,18 @@ class CarState(CarStateBase):
 
     # stock lkas should be off
     # TODO: is this needed?
-    if self.CP.carFingerprint == CAR.NISSAN_ALTIMA:
+    if vehicle == CAR.NISSAN_ALTIMA:
       ret.invalidLkasSetting = bool(cp.vl["LKAS_SETTINGS"]["LKAS_ENABLED"])
     else:
       ret.invalidLkasSetting = bool(cp_adas.vl["LKAS_SETTINGS"]["LKAS_ENABLED"])
+      self.lkas_hud_msg = copy.copy(cp_adas.vl["PROPILOT_HUD"])
+      self.lkas_hud_info_msg = copy.copy(cp_adas.vl["PROPILOT_HUD_INFO_MSG"])
 
     self.cruise_throttle_msg = copy.copy(cp.vl["CRUISE_THROTTLE"])
 
-    if self.CP.carFingerprint in (CAR.NISSAN_LEAF, CAR.NISSAN_LEAF_IC):
+    if vehicle == CAR.NISSAN_LEAF:
       self.cancel_msg = copy.copy(cp.vl["CANCEL_MSG"])
 
-    if self.CP.carFingerprint != CAR.NISSAN_ALTIMA:
-      self.lkas_hud_msg = copy.copy(cp_adas.vl["PROPILOT_HUD"])
-      self.lkas_hud_info_msg = copy.copy(cp_adas.vl["PROPILOT_HUD_INFO_MSG"])
 
     ret.buttonEvents = create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise})
 
